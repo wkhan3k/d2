@@ -5,15 +5,49 @@ type Point = {
   y: number;
 };
 
-type StrokeStyle = {
+// Tool definitions: data describing what each tool creates
+
+type MarkerTool = {
+  kind: "marker";
+  label: string;
   width: number;
   color: string;
 };
 
-type Stroke = {
-  points: Point[];
-  style: StrokeStyle;
+type StickerTool = {
+  kind: "sticker";
+  label: string;
+  emoji: string;
+  size: number;
 };
+
+type Tool = MarkerTool | StickerTool;
+
+// Drawing commands: what is stored in the document.
+type StrokeCommand = {
+  kind: "stroke";
+  points: Point[];
+  style: { width: number; color: string };
+};
+
+type StickerCommand = {
+  kind: "sticker";
+  position: Point;
+  emoji: string;
+  size: number;
+};
+
+type DrawCommand = StrokeCommand | StickerCommand;
+
+//  Tool definitions
+
+const tools: Tool[] = [
+  { kind: "marker", label: "Thin", width: 2, color: "black" },
+  { kind: "marker", label: "Thick", width: 8, color: "black" },
+  { kind: "sticker", label: "⭐", emoji: "⭐", size: 36 },
+  { kind: "sticker", label: "🐱", emoji: "🐱", size: 36 },
+  { kind: "sticker", label: "🎵", emoji: "🎵", size: 36 },
+];
 
 //  Page setup
 
@@ -24,6 +58,11 @@ if (!app) {
 
 const heading = document.createElement("h1");
 heading.textContent = "Sketchpad";
+
+const toolbar = document.createElement("div");
+toolbar.style.display = "flex";
+toolbar.style.gap = "8px";
+toolbar.style.marginBottom = "8px";
 
 const controls = document.createElement("div");
 controls.style.display = "flex";
@@ -43,7 +82,7 @@ canvas.style.border = "2px solid black";
 canvas.style.background = "white";
 canvas.style.cursor = "crosshair";
 
-app.append(heading, controls, canvas);
+app.append(heading, toolbar, controls, canvas);
 
 const maybeCtx = canvas.getContext("2d");
 if (!maybeCtx) {
@@ -60,11 +99,11 @@ function makeButton(label: string): HTMLButtonElement {
 
 //  Document and interaction state
 
-const strokes: Stroke[] = []; // active document, in draw order
-const redoStack: Stroke[] = []; // undone strokes, most recent last
-const selectedStyle: StrokeStyle = { width: 4, color: "black" };
+const commands: DrawCommand[] = []; // active document, in draw order
+const redoStack: DrawCommand[] = []; // undone commands, most recent last
+let selectedTool: Tool = tools[0]; // default tool
 
-let currentStroke: Stroke | null = null; // in-progress gesture, not yet committed
+let currentCommand: DrawCommand | null = null; // in-progress gesture, not yet committed
 
 //  Coordinates
 
@@ -79,111 +118,182 @@ function toCanvasPoint(event: PointerEvent): Point {
   };
 }
 
+//  Tools -> commands (shared behavior)
+
+function createCommand(tool: Tool, point: Point): DrawCommand {
+  switch (tool.kind) {
+    case "marker":
+      return {
+        kind: "stroke",
+        points: [point],
+        style: { width: tool.width, color: tool.color },
+      };
+    case "sticker":
+      return {
+        kind: "sticker",
+        position: point,
+        emoji: tool.emoji,
+        size: tool.size,
+      };
+  }
+}
+
+function extendCommand(command: DrawCommand, point: Point) {
+  switch (command.kind) {
+    case "stroke":
+      command.points.push(point);
+      break;
+    case "sticker":
+      command.position = point; // drag to position before release
+      break;
+  }
+}
 //  Rendering
 
-function drawStroke(stroke: Stroke) {
+function drawStroke(target: CanvasRenderingContext2D, stroke: StrokeCommand) {
   const points = stroke.points;
   if (points.length === 0) {
     return;
   }
 
-  ctx.beginPath();
-  ctx.lineWidth = stroke.style.width;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = stroke.style.color;
-  ctx.moveTo(points[0].x, points[0].y);
+  target.lineWidth = stroke.style.width;
+  target.lineCap = "round";
+  target.lineJoin = "round";
+  target.strokeStyle = stroke.style.color;
 
+  target.beginPath();
+  target.moveTo(points[0].x, points[0].y);
   for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x, points[i].y);
+    target.lineTo(points[i].x, points[i].y);
   }
+  target.stroke();
+}
 
-  ctx.stroke();
+function drawSticker(
+  target: CanvasRenderingContext2D,
+  sticker: StickerCommand,
+) {
+  target.font = `${sticker.size}px sans-serif`;
+  target.textAlign = "center";
+  target.textBaseline = "middle";
+  target.fillText(sticker.emoji, sticker.position.x, sticker.position.y);
+}
+
+function drawCommand(target: CanvasRenderingContext2D, command: DrawCommand) {
+  target.save(); // keep each command's styles from leaking into the next
+  switch (command.kind) {
+    case "stroke":
+      drawStroke(target, command);
+      break;
+    case "sticker":
+      drawSticker(target, command);
+      break;
+  }
+  target.restore();
 }
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  for (const stroke of strokes) {
-    drawStroke(stroke);
+  for (const command of commands) {
+    drawCommand(ctx, command);
   }
 
-  if (currentStroke) {
-    drawStroke(currentStroke);
+  if (currentCommand) {
+    drawCommand(ctx, currentCommand);
   }
+}
+
+//  Toolbar
+
+function renderToolbar() {
+  toolbar.replaceChildren();
+
+  for (const tool of tools) {
+    const button = makeButton(tool.label);
+    const isSelected = tool === selectedTool;
+
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.style.outline = isSelected ? "2px solid black" : "";
+    button.addEventListener("click", () => selectTool(tool));
+
+    toolbar.append(button);
+  }
+}
+
+function selectTool(tool: Tool) {
+  selectedTool = tool; // no history change, so redo survives
+  renderToolbar();
 }
 
 //  History
 
 function updateHistoryButtons() {
-  undoButton.disabled = strokes.length === 0;
+  undoButton.disabled = commands.length === 0;
   redoButton.disabled = redoStack.length === 0;
 }
 
 function undo() {
-  const stroke = strokes.pop();
-  if (!stroke) {
+  const command = commands.pop();
+  if (!command) {
     return; // nothing to undo
   }
 
-  redoStack.push(stroke);
+  redoStack.push(command);
   render();
   updateHistoryButtons();
 }
 
 function redo() {
-  const stroke = redoStack.pop();
-  if (!stroke) {
+  const command = redoStack.pop();
+  if (!command) {
     return; // nothing to redo
   }
 
-  strokes.push(stroke);
+  commands.push(command);
   render();
   updateHistoryButtons();
 }
 
-// Input
+//  Input
 
-function beginStroke(event: PointerEvent) {
+function beginGesture(event: PointerEvent) {
   if (event.button !== 0) {
     return;
   }
 
-  currentStroke = {
-    points: [toCanvasPoint(event)],
-    style: { ...selectedStyle },
-  };
-
+  currentCommand = createCommand(selectedTool, toCanvasPoint(event));
   canvas.setPointerCapture(event.pointerId);
-}
-
-function updateStroke(event: PointerEvent) {
-  if (!currentStroke) {
-    return;
-  }
-
-  currentStroke.points.push(toCanvasPoint(event));
   render();
 }
 
-function finishStroke() {
-  if (!currentStroke) {
+function updateGesture(event: PointerEvent) {
+  if (!currentCommand) {
     return;
   }
 
-  strokes.push(currentStroke);
+  extendCommand(currentCommand, toCanvasPoint(event));
+  render();
+}
+
+function finishGesture() {
+  if (!currentCommand) {
+    return;
+  }
+
+  commands.push(currentCommand);
   redoStack.length = 0; // a new action discards the abandoned redo branch
-  currentStroke = null;
+  currentCommand = null;
   render();
   updateHistoryButtons();
 }
 
-function cancelStroke() {
-  if (!currentStroke) {
+function cancelGesture() {
+  if (!currentCommand) {
     return;
   }
 
-  currentStroke = null; // no history change, so redo survives
+  currentCommand = null; // no history change, so redo survives
   render();
 }
 
@@ -196,11 +306,12 @@ clearButton.addEventListener("click", () => {
 });
 redrawButton.addEventListener("click", render);
 
-canvas.addEventListener("pointerdown", beginStroke);
-canvas.addEventListener("pointermove", updateStroke);
-canvas.addEventListener("pointerup", finishStroke);
-canvas.addEventListener("pointercancel", cancelStroke);
-canvas.addEventListener("lostpointercapture", cancelStroke);
+canvas.addEventListener("pointerdown", beginGesture);
+canvas.addEventListener("pointermove", updateGesture);
+canvas.addEventListener("pointerup", finishGesture);
+canvas.addEventListener("pointercancel", cancelGesture);
+canvas.addEventListener("lostpointercapture", cancelGesture);
 
+renderToolbar();
 updateHistoryButtons();
 render();
