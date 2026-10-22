@@ -1,8 +1,4 @@
-const app = document.querySelector<HTMLElement>("#app");
-
-if (!app) {
-  throw new Error("App root not found");
-}
+// Types
 
 type Point = {
   x: number;
@@ -19,6 +15,13 @@ type Stroke = {
   style: StrokeStyle;
 };
 
+//  Page setup
+
+const app = document.querySelector<HTMLElement>("#app");
+if (!app) {
+  throw new Error("App root not found");
+}
+
 const heading = document.createElement("h1");
 heading.textContent = "Sketchpad";
 
@@ -27,19 +30,11 @@ controls.style.display = "flex";
 controls.style.gap = "8px";
 controls.style.marginBottom = "12px";
 
-const clearButton = document.createElement("button");
-clearButton.type = "button";
-clearButton.textContent = "Clear pixels";
-clearButton.addEventListener("click", () => {
-  ctx.clearRect(0, 0, canvas.width, canvas.height); // document untouched
-});
-
-const redrawButton = document.createElement("button");
-redrawButton.type = "button";
-redrawButton.textContent = "Redraw";
-redrawButton.addEventListener("click", render);
-
-controls.append(clearButton, redrawButton);
+const undoButton = makeButton("Undo");
+const redoButton = makeButton("Redo");
+const clearButton = makeButton("Clear pixels");
+const redrawButton = makeButton("Redraw");
+controls.append(undoButton, redoButton, clearButton, redrawButton);
 
 const canvas = document.createElement("canvas");
 canvas.width = 512;
@@ -56,13 +51,22 @@ if (!maybeCtx) {
 }
 const ctx: CanvasRenderingContext2D = maybeCtx;
 
-const strokes: Stroke[] = [];
-const selectedStyle: StrokeStyle = {
-  width: 4,
-  color: "black",
-};
+function makeButton(label: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  return button;
+}
 
-let currentStroke: Stroke | null = null;
+//  Document and interaction state
+
+const strokes: Stroke[] = []; // active document, in draw order
+const redoStack: Stroke[] = []; // undone strokes, most recent last
+const selectedStyle: StrokeStyle = { width: 4, color: "black" };
+
+let currentStroke: Stroke | null = null; // in-progress gesture, not yet committed
+
+//  Coordinates
 
 function toCanvasPoint(event: PointerEvent): Point {
   const rect = canvas.getBoundingClientRect();
@@ -75,8 +79,11 @@ function toCanvasPoint(event: PointerEvent): Point {
   };
 }
 
+//  Rendering
+
 function drawStroke(stroke: Stroke) {
-  if (stroke.points.length === 0) {
+  const points = stroke.points;
+  if (points.length === 0) {
     return;
   }
 
@@ -85,10 +92,10 @@ function drawStroke(stroke: Stroke) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.strokeStyle = stroke.style.color;
-  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  ctx.moveTo(points[0].x, points[0].y);
 
-  for (let i = 1; i < stroke.points.length; i++) {
-    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i].y);
   }
 
   ctx.stroke();
@@ -105,6 +112,37 @@ function render() {
     drawStroke(currentStroke);
   }
 }
+
+//  History
+
+function updateHistoryButtons() {
+  undoButton.disabled = strokes.length === 0;
+  redoButton.disabled = redoStack.length === 0;
+}
+
+function undo() {
+  const stroke = strokes.pop();
+  if (!stroke) {
+    return; // nothing to undo
+  }
+
+  redoStack.push(stroke);
+  render();
+  updateHistoryButtons();
+}
+
+function redo() {
+  const stroke = redoStack.pop();
+  if (!stroke) {
+    return; // nothing to redo
+  }
+
+  strokes.push(stroke);
+  render();
+  updateHistoryButtons();
+}
+
+// Input
 
 function beginStroke(event: PointerEvent) {
   if (event.button !== 0) {
@@ -134,8 +172,10 @@ function finishStroke() {
   }
 
   strokes.push(currentStroke);
+  redoStack.length = 0; // a new action discards the abandoned redo branch
   currentStroke = null;
   render();
+  updateHistoryButtons();
 }
 
 function cancelStroke() {
@@ -143,12 +183,24 @@ function cancelStroke() {
     return;
   }
 
-  currentStroke = null;
+  currentStroke = null; // no history change, so redo survives
   render();
 }
+
+//  Wiring
+
+undoButton.addEventListener("click", undo);
+redoButton.addEventListener("click", redo);
+clearButton.addEventListener("click", () => {
+  ctx.clearRect(0, 0, canvas.width, canvas.height); // pixels only, document untouched
+});
+redrawButton.addEventListener("click", render);
 
 canvas.addEventListener("pointerdown", beginStroke);
 canvas.addEventListener("pointermove", updateStroke);
 canvas.addEventListener("pointerup", finishStroke);
 canvas.addEventListener("pointercancel", cancelStroke);
 canvas.addEventListener("lostpointercapture", cancelStroke);
+
+updateHistoryButtons();
+render();
