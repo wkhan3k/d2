@@ -9,11 +9,20 @@ type Point = {
   y: number;
 };
 
+type StrokeStyle = {
+  width: number;
+  color: string;
+};
+
+type Stroke = {
+  points: Point[];
+  style: StrokeStyle;
+};
+
 const heading = document.createElement("h1");
 heading.textContent = "Sketchpad";
 
 const message = document.createElement("p");
-message.textContent = "Your project starts here.";
 
 const canvas = document.createElement("canvas");
 canvas.width = 512;
@@ -22,7 +31,7 @@ canvas.style.border = "2px solid black";
 canvas.style.background = "white";
 canvas.style.cursor = "crosshair";
 
-app.append(heading, canvas);
+app.append(heading, message, canvas);
 
 const maybeCtx = canvas.getContext("2d");
 if (!maybeCtx) {
@@ -30,7 +39,10 @@ if (!maybeCtx) {
 }
 const ctx: CanvasRenderingContext2D = maybeCtx;
 
-let currentStroke: Point[] | null = null;
+const strokes: Stroke[] = [];
+const selectedStyle: StrokeStyle = { width: 4, color: "black" };
+
+let currentStroke: Stroke | null = null;
 
 function toCanvasPoint(event: PointerEvent): Point {
   const rect = canvas.getBoundingClientRect();
@@ -43,17 +55,10 @@ function toCanvasPoint(event: PointerEvent): Point {
   };
 }
 
-function beginStroke(event: PointerEvent) {
-  if (event.button !== 0) return;
-
-  currentStroke = [toCanvasPoint(event)];
-  canvas.setPointerCapture(event.pointerId);
-}
-
-function drawStrokeSegment(from: Point, to: Point) {
-  ctx.lineWidth = 4;
+function drawStrokeSegment(from: Point, to: Point, style: StrokeStyle) {
+  ctx.lineWidth = style.width;
   ctx.lineCap = "round";
-  ctx.strokeStyle = "black";
+  ctx.strokeStyle = style.color;
 
   ctx.beginPath();
   ctx.moveTo(from.x, from.y);
@@ -61,22 +66,40 @@ function drawStrokeSegment(from: Point, to: Point) {
   ctx.stroke();
 }
 
-function updateStroke(event: PointerEvent) {
-  if (currentStroke === null) return;
+function beginStroke(event: PointerEvent) {
+  if (event.button !== 0) return;
 
-  const previousPoint = currentStroke[currentStroke.length - 1];
-  const nextPoint = toCanvasPoint(event);
-
-  currentStroke.push(nextPoint);
-  drawStrokeSegment(previousPoint, nextPoint);
+  currentStroke = {
+    points: [toCanvasPoint(event)],
+    style: { ...selectedStyle },
+  };
+  canvas.setPointerCapture(event.pointerId);
 }
 
-function endStroke() {
+function updateStroke(event: PointerEvent) {
+  if (!currentStroke) return;
+
+  const previousPoint = currentStroke.points[currentStroke.points.length - 1];
+  const nextPoint = toCanvasPoint(event);
+
+  currentStroke.points.push(nextPoint);
+  drawStrokeSegment(previousPoint, nextPoint, currentStroke.style);
+}
+
+function finishStroke() {
+  if (!currentStroke) return;
+
+  strokes.push(currentStroke);
+  currentStroke = null;
+  console.log(`Document has ${strokes.length} stroke(s)`, strokes);
+}
+
+function cancelStroke() {
   currentStroke = null;
 }
 
 canvas.addEventListener("pointerdown", beginStroke);
 canvas.addEventListener("pointermove", updateStroke);
-canvas.addEventListener("pointerup", endStroke);
-canvas.addEventListener("pointercancel", endStroke);
-canvas.addEventListener("lostpointercapture", endStroke);
+canvas.addEventListener("pointerup", finishStroke);
+canvas.addEventListener("pointercancel", cancelStroke);
+canvas.addEventListener("lostpointercapture", cancelStroke);
