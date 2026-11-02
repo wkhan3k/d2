@@ -117,7 +117,14 @@ const undoButton = makeButton("Undo");
 const redoButton = makeButton("Redo");
 const clearButton = makeButton("Clear pixels");
 const redrawButton = makeButton("Redraw");
-controls.append(undoButton, redoButton, clearButton, redrawButton);
+const exportButton = makeButton("Export PNG");
+controls.append(
+  undoButton,
+  redoButton,
+  clearButton,
+  redrawButton,
+  exportButton,
+);
 
 const canvas = document.createElement("canvas");
 canvas.width = 512;
@@ -248,6 +255,34 @@ function render() {
   }
 }
 
+//  Export
+
+function exportPNG() {
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = 1024;
+  exportCanvas.height = 1024;
+
+  const exportCtx = exportCanvas.getContext("2d");
+  if (!exportCtx) {
+    return;
+  }
+
+  // white background to match the on-screen canvas
+  exportCtx.fillStyle = "white";
+  exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+  exportCtx.scale(2, 2); // 512 coordinates now fill 1024 pixels
+
+  for (const command of commands) {
+    drawCommand(exportCtx, command);
+  }
+
+  const link = document.createElement("a");
+  link.href = exportCanvas.toDataURL("image/png");
+  link.download = "sketchpad.png";
+  link.click();
+}
+
 //  Toolbar
 
 function renderToolbar() {
@@ -349,6 +384,7 @@ clearButton.addEventListener("click", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height); // pixels only, document untouched
 });
 redrawButton.addEventListener("click", render);
+exportButton.addEventListener("click", exportPNG);
 
 canvas.addEventListener("pointerdown", beginGesture);
 canvas.addEventListener("pointermove", updateGesture);
