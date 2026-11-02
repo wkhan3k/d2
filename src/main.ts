@@ -64,6 +64,46 @@ toolbar.style.display = "flex";
 toolbar.style.gap = "8px";
 toolbar.style.marginBottom = "8px";
 
+// Custom sticker tool controls
+const customToolControls = document.createElement("div");
+customToolControls.style.display = "flex";
+customToolControls.style.gap = "8px";
+customToolControls.style.marginBottom = "8px";
+
+const stickerNameInput = document.createElement("input");
+stickerNameInput.type = "text";
+stickerNameInput.placeholder = "Sticker name";
+
+const stickerEmojiInput = document.createElement("input");
+stickerEmojiInput.type = "text";
+stickerEmojiInput.placeholder = "Emoji or text";
+
+const createToolButton = makeButton("Create Tool");
+
+customToolControls.append(stickerNameInput, stickerEmojiInput, createToolButton);
+
+createToolButton.addEventListener("click", () => {
+  const name = stickerNameInput.value.trim();
+  const emoji = stickerEmojiInput.value.trim();
+
+  if (name === "" || emoji === "") {
+    return; // reject empty name or sticker content
+  }
+
+  const newTool: StickerTool = {
+    kind: "sticker",
+    label: name,
+    emoji: emoji,
+    size: 36,
+  };
+
+  tools.push(newTool);
+  renderToolbar();
+
+  stickerNameInput.value = "";
+  stickerEmojiInput.value = "";
+});
+
 const controls = document.createElement("div");
 controls.style.display = "flex";
 controls.style.gap = "8px";
@@ -82,7 +122,7 @@ canvas.style.border = "2px solid black";
 canvas.style.background = "white";
 canvas.style.cursor = "crosshair";
 
-app.append(heading, toolbar, controls, canvas);
+app.append(heading, customToolControls, toolbar, controls, canvas);
 
 const maybeCtx = canvas.getContext("2d");
 if (!maybeCtx) {
