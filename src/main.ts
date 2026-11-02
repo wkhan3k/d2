@@ -80,7 +80,11 @@ stickerEmojiInput.placeholder = "Emoji or text";
 
 const createToolButton = makeButton("Create Tool");
 
-customToolControls.append(stickerNameInput, stickerEmojiInput, createToolButton);
+customToolControls.append(
+  stickerNameInput,
+  stickerEmojiInput,
+  createToolButton,
+);
 
 createToolButton.addEventListener("click", () => {
   const name = stickerNameInput.value.trim();
