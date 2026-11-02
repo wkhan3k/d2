@@ -243,16 +243,32 @@ function drawCommand(target: CanvasRenderingContext2D, command: DrawCommand) {
   target.restore();
 }
 
+// Draws a list of commands onto any context, in order.
+// Used by both the on-screen canvas and PNG export.
+function drawCommands(
+  target: CanvasRenderingContext2D,
+  list: readonly DrawCommand[],
+) {
+  for (const command of list) {
+    drawCommand(target, command);
+  }
+}
+
+// Draws the unfinished gesture. This is a screen-only preview,
+// so it is never part of the document or the export.
+function drawPreview(
+  target: CanvasRenderingContext2D,
+  command: DrawCommand | null,
+) {
+  if (command) {
+    drawCommand(target, command);
+  }
+}
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  for (const command of commands) {
-    drawCommand(ctx, command);
-  }
-
-  if (currentCommand) {
-    drawCommand(ctx, currentCommand);
-  }
+  drawCommands(ctx, commands); // committed document
+  drawPreview(ctx, currentCommand); // in-progress gesture on top
 }
 
 //  Export
@@ -273,9 +289,7 @@ function exportPNG() {
 
   exportCtx.scale(2, 2); // 512 coordinates now fill 1024 pixels
 
-  for (const command of commands) {
-    drawCommand(exportCtx, command);
-  }
+  drawCommands(exportCtx, commands); // committed document only, no preview
 
   const link = document.createElement("a");
   link.href = exportCanvas.toDataURL("image/png");
